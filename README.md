@@ -55,6 +55,19 @@ lib/api/
   response.ts          # shared JSON response helpers
 ```
 
+## Performance
+
+| Scenario | Latency |
+|---|---|
+| Pick-up city search (cold) | ~360 ms upstream → instant on cache hit |
+| Drop-off fan-out, 10 countries in parallel (cold) | ~160 ms wall time |
+| `/neighbours` on warm cache | < 1 ms — pure in-memory read, zero network I/O |
+| Keystroke debounce | 300 ms — no request until typing pauses |
+
+Country index (25 KB) is fetched once from `countries.dev` and cached for 24 h.
+All city search results are also cached (24 h, 500-entry LRU). Stale data is served
+if `countries.dev` is unreachable rather than failing the request.
+
 ## Notes
 
 - Country border data uses alpha-3 codes (`"AUT"`); city records use alpha-2 (`"AT"`).

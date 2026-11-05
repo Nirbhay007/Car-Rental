@@ -20,6 +20,7 @@ Open http://localhost:3000.
 - Select a pick-up city — fetches allowed countries from `countries.dev/countries` (border graph).
 - Type in the drop-off box — only returns cities in the pick-up country or its neighbours.
 - All filtering happens server-side. The browser never decides what's allowed.
+- Pick-up and drop-off must be on different calendar days — drop-off must be at least the next day.
 
 ## API routes
 

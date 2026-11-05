@@ -17,9 +17,10 @@ A four-field search form:
 | 3 | Pick-up date & time | `<input type="datetime-local">` |
 | 4 | Drop-off date & time | `<input type="datetime-local">` |
 
-**Core constraint:** once a pick-up city is selected, the drop-off combobox must only show
-cities in the same country **or** a country that shares a land border with the pick-up country.
-All filtering happens on the **server**. The browser never applies its own eligibility logic.
+**Constraints:**
+
+1. **Location** — once a pick-up city is selected, the drop-off combobox must only show cities in the same country **or** a country that shares a land border. All filtering happens on the **server**. The browser never applies its own eligibility logic.
+2. **Dates** — pick-up and drop-off cannot be on the same calendar day. Drop-off must be at least the next day.
 
 ---
 
@@ -307,10 +308,20 @@ Drop-off combobox receives:
 Every drop-off keystroke sends:
   GET /api/geo/cities?q={text}&allowedCountries={codes}&limit=8
   ← server does the fan-out; client shows whatever comes back
+
+On pick-up date changed:
+  1. setFromDate(next)
+  2. Compute earliest = start of the day after pick-up (next day T00:00)
+  3. If toDate is on the same day or earlier → setToDate(earliest)
+     ↑ enforces: pick-up and drop-off cannot be on the same calendar day
 ```
 
 **There is no client-side filtering.** The `allowedCountries` parameter is forwarded to the
 server as a passthrough; the server decides which cities to return.
+
+**Date rule:** drop-off must be on a different calendar day to pick-up (minimum the next day).
+The drop-off input's `min` attribute is set to `T00:00` of the day after the pick-up date so
+the browser's native date picker enforces this without any extra UI.
 
 ---
 
@@ -382,6 +393,8 @@ Owns the four pieces of state: `pickup`, `dropoff`, `allowed`, `fromDate`, `toDa
 - On pick-up select: set domestic-only restriction, fetch `/neighbours`, expand to full list.
 - On drop-off: purely passive — `LocationCombobox` handles its own search.
 - Date fields: two `<input type="datetime-local">` with defaults (tomorrow + 3 days).
+- Drop-off date `min` is always `T00:00` of the day after the pick-up date — same-day not allowed.
+- When pick-up date changes and the drop-off would land on the same day or earlier, drop-off is automatically bumped to midnight of the next day.
 - Selection summary: rendered below the grid once both cities are chosen.
 
 ---

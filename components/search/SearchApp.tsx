@@ -14,6 +14,24 @@ function defaultDateTimeLocal(offsetMs: number): string {
   );
 }
 
+/**
+ * Returns the earliest allowed drop-off datetime-local string:
+ * the start of the day AFTER the pick-up date (00:00 next day).
+ * This enforces that pick-up and drop-off cannot be on the same calendar day.
+ */
+function minDropoffDate(fromValue: string): string {
+  if (!fromValue) return "";
+  // fromValue is "YYYY-MM-DDTHH:mm" — take just the date part, advance by 1 day.
+  const datePart = fromValue.slice(0, 10); // "YYYY-MM-DD"
+  const next = new Date(`${datePart}T00:00`);
+  next.setDate(next.getDate() + 1);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${next.getFullYear()}-${pad(next.getMonth() + 1)}-${pad(next.getDate())}` +
+    `T00:00`
+  );
+}
+
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 export function SearchApp() {
@@ -139,7 +157,16 @@ export function SearchApp() {
               className="date-input"
               type="datetime-local"
               value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
+              onChange={(e) => {
+                const next = e.target.value;
+                setFromDate(next);
+                // If the current drop-off is on the same day or earlier,
+                // bump it to the start of the next day.
+                const earliest = minDropoffDate(next);
+                if (!toDate || toDate < earliest) {
+                  setToDate(earliest);
+                }
+              }}
             />
           </label>
 
@@ -149,7 +176,7 @@ export function SearchApp() {
               className="date-input"
               type="datetime-local"
               value={toDate}
-              min={fromDate}
+              min={minDropoffDate(fromDate)}
               onChange={(e) => setToDate(e.target.value)}
             />
           </label>

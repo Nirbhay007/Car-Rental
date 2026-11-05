@@ -55,18 +55,22 @@ export function SearchApp() {
 
     try {
       const res = await fetch(`/api/geo/countries/${city.countryCode}/neighbours`);
+
+      // Always check the sequence number before touching state — even on error —
+      // so a slow response from a previous pick-up never overwrites a newer one.
+      if (seq !== neighboursSeq.current) return;
+
       if (!res.ok) return; // keep domestic-only restriction on error
 
       const payload = (await res.json()) as NeighboursResponse;
-
-      // Discard if a newer pickup change has already fired.
-      if (seq !== neighboursSeq.current) return;
 
       if (payload.allowedCountries?.length) {
         setAllowed(payload.allowedCountries);
       }
     } catch {
       // Network error — keep domestic-only restriction. Already set above.
+      // No state update needed; seq check not required on caught errors since
+      // we only reach here if the fetch itself threw (e.g. network offline).
     }
   }
 

@@ -251,6 +251,10 @@ a {
   opacity: 0.72;
 }
 
+.is-disabled .combo-icon {
+  opacity: 0.4;
+}
+
 .combo-clear {
   position: absolute;
   top: 50%;

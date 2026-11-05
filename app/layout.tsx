@@ -3,9 +3,9 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "SIXT — City-to-city car rental",
+  title: "CarRental — Pick-up & Drop-off",
   description:
-    "Pick up in one city and drop off in another, as long as they share a country or a land border.",
+    "Search cities for pick-up and drop-off. Drop-off is restricted to the same country or a land-border neighbour.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

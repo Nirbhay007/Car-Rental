@@ -1,10 +1,9 @@
-# SIXT — City-to-city car rental
+# Car Rental — Pick-up & Drop-off
 
-A working Next.js demo of the plan in [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md).
+A Next.js app with a pick-up and drop-off city search form.
 
-Pick a **pick-up city**, a **drop-off city**, and a rental date range. The app only
-allows a drop-off in the same country or a direct **land-border neighbour**, then
-ranks the available cars by an overall "best offer" score.
+Select a **pick-up city**, then select a **drop-off city** — restricted to the same country or
+a direct **land-border neighbour**. Add pick-up and drop-off dates and times.
 
 ## Run it
 
@@ -15,81 +14,48 @@ npm run dev
 
 Open http://localhost:3000.
 
-```bash
-npm test        # unit tests for eligibility, dates, and ranking
-npm run build   # production build
-npm run start   # run the production build
-```
+## How it works
 
-## What works
+- Type in the pick-up box — searches all cities via `countries.dev/cities`.
+- Select a pick-up city — fetches allowed countries from `countries.dev/countries` (border graph).
+- Type in the drop-off box — only returns cities in the pick-up country or its neighbours.
+- All filtering happens server-side. The browser never decides what's allowed.
 
-- **City autocomplete** backed by the live [countries.dev](https://countries.dev) API.
-- **Border-aware eligibility** using `GET /countries?fields=...&borders`:
-  - cities provide ISO alpha-2 country codes
-  - `borders` provides ISO alpha-3 codes
-  - the app builds a symmetric country graph, so `DE → AT` and `AT → DE` both work
-  - unknown border codes are ignored; eligibility fails closed
-- **Date validation**:
-  - pick-up at least 2 hours ahead
-  - drop-off after pick-up
-  - 1-hour minimum, 90-day maximum
-  - timezone-aware wall-clock conversion (`datetime-local` + city IANA timezone)
-  - 24-hour rental-day billing with a 29-minute grace period
-- **Best-offer ranking**:
-  - 60% price, 20% station distance, 10% supplier rating, 10% free cancellation
-  - deterministic tie-breakers
-  - Best / Cheapest / Closest / Top rated sorts
-- **Cross-border UX** including a one-way fee notice.
-- **Server-side caching** for countries and city searches, with stale fallback.
-
-## API
+## API routes
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/geo/cities?q=&allowedCountries=&limit=` | City autocomplete |
-| GET | `/api/geo/countries/[code]/neighbours` | Allowed drop-off countries |
-| GET | `/api/search?pickupCityId=&dropoffCityId=&from=&to=` | Ranked offers |
+| GET | `/api/geo/cities?q=&allowedCountries=&limit=` | City search, fan-out per allowed country |
+| GET | `/api/geo/countries/[code]/neighbours` | Allowed drop-off countries for a pick-up |
 
-Example:
+## External APIs used
 
-```bash
-curl "http://localhost:3000/api/search?pickupCityId=2867714&dropoffCityId=2766824&from=2026-12-10T09:00:00Z&to=2026-12-14T09:00:00Z&sort=best"
-```
+Only two endpoints from [countries.dev](https://countries.dev):
+
+- `GET /countries?fields=name,alpha2Code,alpha3Code,borders,flag` — builds the neighbour index (fetched once, cached 24 h)
+- `GET /cities?q=&country=&limit=` — powers both comboboxes
 
 ## Project layout
 
 ```
 app/
-  api/geo/cities/route.ts
-  api/geo/countries/[code]/neighbours/route.ts
-  api/search/route.ts
+  api/geo/cities/route.ts                      # proxies city search to countries.dev
+  api/geo/countries/[code]/neighbours/route.ts # returns allowed drop-off countries
   page.tsx
   globals.css
 components/search/
-  SearchApp.tsx
-  LocationCombobox.tsx
-  OfferCard.tsx
+  SearchApp.tsx        # four-field form: pick-up city, drop-off city, from date, to date
+  LocationCombobox.tsx # accessible combobox with debounce and keyboard nav
 lib/geo/
-  countries.ts      # index, border graph, eligibility
-  cities.ts         # city search + cache
-  time.ts           # IANA wall time -> UTC
-lib/search/
-  query-schema.ts   # Zod validation
-  pricing.ts        # rental days
-  ranking.ts        # scoring and badges
-lib/inventory/
-  types.ts          # InventoryProvider interface
-  mock-provider.ts  # seeded in-memory inventory
-tests/
+  countries.ts         # country index, border graph, neighbour lookup
+  cities.ts            # city search with per-country fan-out and cache
+  types.ts
+lib/api/
+  response.ts          # shared JSON response helpers
 ```
 
-## Notes and limits
+## Notes
 
-- **Inventory is mocked** in `lib/inventory/mock-provider.ts`: 3 stations,
-  4 vehicle classes, deterministic availability and prices. Replace
-  `MockInventoryProvider` with a real adapter that implements `InventoryProvider`.
-- **EUR only** at launch. Other currencies return `CURRENCY_UNSUPPORTED`.
-- **In-memory cache** in this demo. The plan's production target is Redis/KV;
-  the module boundaries already isolate caching.
-- **No booking flow yet.** Search, eligibility, pricing, and ranking are implemented.
-- Attribution: geographic data from countries.dev / GeoNames (CC BY 4.0).
+- Country border data uses alpha-3 codes (`"AUT"`); city records use alpha-2 (`"AT"`).
+  The server builds a lookup bridge between the two automatically.
+- Geo data from countries.dev / GeoNames (CC BY 4.0).

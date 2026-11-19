@@ -3,17 +3,14 @@ export interface CountryRecord {
   alpha2Code: string;
   alpha3Code: string;
   borders?: string[];
-  region?: string;
-  currencies?: { code: string; name: string; symbol: string }[];
-  timezones?: string[];
   flag?: string;
 }
 
 export interface CountryIndex {
   byAlpha2: Map<string, CountryRecord>;
   byAlpha3: Map<string, CountryRecord>;
+  /** Alpha-2 neighbours, symmetric. */
   neighbours: Map<string, Set<string>>;
-  fetchedAt: number;
 }
 
 export interface CityRecord {

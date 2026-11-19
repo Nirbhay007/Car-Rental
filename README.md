@@ -1,10 +1,9 @@
-# SIXT — City-to-city car rental
+# SIXT — City-to-city car rental (minimal demo)
 
-A working Next.js demo of the plan in [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md).
+Pick a pick-up city and a drop-off city. The app allows the route only when both
+cities are in the **same country or direct land-border neighbours**.
 
-Pick a **pick-up city**, a **drop-off city**, and a rental date range. The app only
-allows a drop-off in the same country or a direct **land-border neighbour**, then
-ranks the available cars by an overall "best offer" score.
+Built for an interview: small surface area, server-side rules, no mock inventory.
 
 ## Run it
 
@@ -13,83 +12,92 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000.
+Open <http://localhost:3000>.
 
 ```bash
-npm test        # unit tests for eligibility, dates, and ranking
-npm run build   # production build
-npm run start   # run the production build
+npm test        # route eligibility tests
+npm run typecheck
+npm run build
 ```
 
-## What works
+## The rule
 
-- **City autocomplete** backed by the live [countries.dev](https://countries.dev) API.
-- **Border-aware eligibility** using `GET /countries?fields=...&borders`:
-  - cities provide ISO alpha-2 country codes
-  - `borders` provides ISO alpha-3 codes
-  - the app builds a symmetric country graph, so `DE → AT` and `AT → DE` both work
-  - unknown border codes are ignored; eligibility fails closed
-- **Date validation**:
-  - pick-up at least 2 hours ahead
-  - drop-off after pick-up
-  - 1-hour minimum, 90-day maximum
-  - timezone-aware wall-clock conversion (`datetime-local` + city IANA timezone)
-  - 24-hour rental-day billing with a 29-minute grace period
-- **Best-offer ranking**:
-  - 60% price, 20% station distance, 10% supplier rating, 10% free cancellation
-  - deterministic tie-breakers
-  - Best / Cheapest / Closest / Top rated sorts
-- **Cross-border UX** including a one-way fee notice.
-- **Server-side caching** for countries and city searches, with stale fallback.
+```text
+DOMESTIC  same country            Munich → Berlin
+BORDER    countries share a border Munich → Salzburg
+INVALID   everything else          Munich → London
+```
 
-## API
+- Cities provide a 2-letter country code (`DE`).
+- Country `borders` provide 3-letter codes (`DEU`).
+- The server normalizes both and builds a symmetric border graph, so `DE → AT`
+  and `AT → DE` both work.
+- A route is re-checked on the server from city IDs; the client never supplies
+  or overrides a country code.
+
+## API calls
+
+Only two countries.dev endpoints are used:
+
+- `GET /countries?fields=name,alpha2Code,alpha3Code,borders,flag`
+- `GET /cities?q=&country=&limit=` and `GET /cities/{geonameId}`
+
+The browser never calls countries.dev directly — all requests go through the
+Next.js routes, which cache country and city data in memory.
+
+## Our endpoints
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/geo/cities?q=&allowedCountries=&limit=` | City autocomplete |
-| GET | `/api/geo/countries/[code]/neighbours` | Allowed drop-off countries |
-| GET | `/api/search?pickupCityId=&dropoffCityId=&from=&to=` | Ranked offers |
+| GET | `/api/geo/cities?q=&limit=&pickupCityId=` | City autocomplete. When `pickupCityId` is set, the server resolves the pick-up country and only searches it plus its land-border neighbours. |
+| GET | `/api/route-check?pickupCityId=&dropoffCityId=` | Resolves both cities, classifies the route, and returns the allowed country list. |
 
-Example:
+`/api/route-check` returns HTTP 200 for a valid request, with:
+
+```json
+{
+  "allowed": true,
+  "relationship": "BORDER",
+  "pickup": { "cityId": 2867714, "city": "Munich", "countryCode": "DE", "countryName": "Germany", "flag": "..." },
+  "dropoff": { "cityId": 2766824, "city": "Salzburg", "countryCode": "AT", "countryName": "Austria", "flag": "..." },
+  "allowedCountries": [{ "countryCode": "DE", "name": "Germany", "relationship": "DOMESTIC" }],
+  "message": "Pick-up and drop-off are in neighbouring countries."
+}
+```
+
+Try it:
 
 ```bash
-curl "http://localhost:3000/api/search?pickupCityId=2867714&dropoffCityId=2766824&from=2026-12-10T09:00:00Z&to=2026-12-14T09:00:00Z&sort=best"
+curl "http://localhost:3000/api/route-check?pickupCityId=2867714&dropoffCityId=2766824"
+curl "http://localhost:3000/api/route-check?pickupCityId=2867714&dropoffCityId=2643743"
 ```
 
 ## Project layout
 
-```
+```text
 app/
-  api/geo/cities/route.ts
-  api/geo/countries/[code]/neighbours/route.ts
-  api/search/route.ts
+  api/geo/cities/route.ts     # city search, restricted server-side
+  api/route-check/route.ts    # route eligibility
   page.tsx
   globals.css
 components/search/
-  SearchApp.tsx
-  LocationCombobox.tsx
-  OfferCard.tsx
+  SearchApp.tsx               # two comboboxes + route result
+  LocationCombobox.tsx        # debounced autocomplete
+  types.ts
 lib/geo/
-  countries.ts      # index, border graph, eligibility
-  cities.ts         # city search + cache
-  time.ts           # IANA wall time -> UTC
-lib/search/
-  query-schema.ts   # Zod validation
-  pricing.ts        # rental days
-  ranking.ts        # scoring and badges
-lib/inventory/
-  types.ts          # InventoryProvider interface
-  mock-provider.ts  # seeded in-memory inventory
+  countries.ts                # country index, border graph, classifyRoute
+  cities.ts                   # /cities search, lookup, cache, fan-out
+  types.ts
 tests/
+  eligibility.test.ts
 ```
 
-## Notes and limits
+## Notes
 
-- **Inventory is mocked** in `lib/inventory/mock-provider.ts`: 3 stations,
-  4 vehicle classes, deterministic availability and prices. Replace
-  `MockInventoryProvider` with a real adapter that implements `InventoryProvider`.
-- **EUR only** at launch. Other currencies return `CURRENCY_UNSUPPORTED`.
-- **In-memory cache** in this demo. The plan's production target is Redis/KV;
-  the module boundaries already isolate caching.
-- **No booking flow yet.** Search, eligibility, pricing, and ranking are implemented.
-- Attribution: geographic data from countries.dev / GeoNames (CC BY 4.0).
+- The rule is country-level. The UK and Ireland share a land border, so a
+  `GB → IE` route is allowed even though London → Dublin crosses water. That is
+  a deliberate simplification.
+- If a country has no `borders` array, it is treated as having no neighbours.
+- If countries.dev is unavailable the app serves stale cached data when it can,
+  otherwise it fails closed (no route is allowed).
+- Geo data: countries.dev / GeoNames (CC BY 4.0).

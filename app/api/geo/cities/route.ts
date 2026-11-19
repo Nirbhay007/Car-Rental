@@ -1,57 +1,58 @@
+import { z } from "zod";
 import { errorResponse, makeRequestId, okResponse } from "@/lib/api/response";
-import { searchCities } from "@/lib/geo/cities";
-import { getCountryIndex } from "@/lib/geo/countries";
-import { GeoError } from "@/lib/geo/types";
+import { getCity, searchCities } from "@/lib/geo/cities";
+import {
+  getAllowedCountryCodes,
+  getCountryIndex,
+} from "@/lib/geo/countries";
+import { CityRecord, CityWithCountry, GeoError } from "@/lib/geo/types";
 
 export const dynamic = "force-dynamic";
+
+const querySchema = z.object({
+  q: z.string().trim().min(2).max(80),
+  limit: z.coerce.number().int().min(1).max(20).default(8),
+  pickupCityId: z.coerce.number().int().positive().optional(),
+});
 
 export async function GET(request: Request) {
   const requestId = makeRequestId();
   const { searchParams } = new URL(request.url);
 
-  const q = (searchParams.get("q") ?? "").trim();
-  const rawLimit = Number(searchParams.get("limit") ?? "10");
-  const limit = Number.isFinite(rawLimit)
-    ? Math.min(20, Math.max(1, Math.floor(rawLimit)))
-    : 10;
-  const country = searchParams.get("country")?.trim().toUpperCase();
-  const allowedCountries = (searchParams.get("allowedCountries") ?? "")
-    .split(",")
-    .map((code) => code.trim().toUpperCase())
-    .filter((code) => /^[A-Z]{2}$/.test(code))
-    .slice(0, 12);
-
-  if (q.length < 2) {
+  const rawQ = (searchParams.get("q") ?? "").trim();
+  if (rawQ.length < 2) {
     return okResponse({ cities: [] }, requestId);
   }
 
+  const parsed = querySchema.safeParse({
+    q: rawQ,
+    limit: searchParams.get("limit") ?? undefined,
+    pickupCityId: searchParams.get("pickupCityId") ?? undefined,
+  });
+
+  if (!parsed.success) {
+    return errorResponse(
+      requestId,
+      400,
+      "INVALID_QUERY",
+      parsed.error.issues[0]?.message ?? "Invalid city search"
+    );
+  }
+
+  const { q, limit, pickupCityId } = parsed.data;
+
   try {
-    const cities = await searchCities({
-      q,
-      country,
-      allowedCountries,
-      limit,
-    });
-
-    let enriched = cities.map((city) => ({
-      ...city,
-      countryName: city.countryCode,
-      flag: "",
-    }));
-
-    try {
+    // The pickup city is resolved from its ID on the server. The client never
+    // supplies a country code or filters results itself.
+    let allowedCountries: string[] | undefined;
+    if (pickupCityId !== undefined) {
+      const pickup = await getCity(pickupCityId);
       const index = await getCountryIndex();
-      enriched = cities.map((city) => {
-        const country = index.byAlpha2.get(city.countryCode);
-        return {
-          ...city,
-          countryName: country?.name ?? city.countryCode,
-          flag: country?.flag ?? "",
-        };
-      });
-    } catch {
-      // Country names are a nice-to-have; city results still work without them.
+      allowedCountries = getAllowedCountryCodes(index, pickup.countryCode);
     }
+
+    const cities = await searchCities({ q, allowedCountries, limit });
+    const enriched = await withCountryDetails(cities);
 
     return okResponse({ cities: enriched }, requestId);
   } catch (error) {
@@ -71,5 +72,28 @@ export async function GET(request: Request) {
       "GEO_UNAVAILABLE",
       "City search is temporarily unavailable"
     );
+  }
+}
+
+async function withCountryDetails(
+  cities: CityRecord[]
+): Promise<CityWithCountry[]> {
+  try {
+    const index = await getCountryIndex();
+    return cities.map((city) => {
+      const country = index.byAlpha2.get(city.countryCode);
+      return {
+        ...city,
+        countryName: country?.name ?? city.countryCode,
+        flag: country?.flag ?? "",
+      };
+    });
+  } catch {
+    // Country names are a nice-to-have; results still work without them.
+    return cities.map((city) => ({
+      ...city,
+      countryName: city.countryCode,
+      flag: "",
+    }));
   }
 }

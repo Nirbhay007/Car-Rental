@@ -9,7 +9,8 @@ interface LocationComboboxProps {
   placeholder: string;
   value: CityWithCountry | null;
   onChange: (city: CityWithCountry | null) => void;
-  allowedCountries?: string[];
+  /** When set, the server restricts results to this pickup city's country and neighbours. */
+  pickupCityId?: number;
   disabled?: boolean;
   hint?: string;
 }
@@ -19,7 +20,7 @@ export function LocationCombobox({
   placeholder,
   value,
   onChange,
-  allowedCountries,
+  pickupCityId,
   disabled,
   hint,
 }: LocationComboboxProps) {
@@ -32,7 +33,6 @@ export function LocationCombobox({
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listId = useId();
-  const allowedKey = (allowedCountries ?? []).join(",");
 
   useEffect(() => {
     setQuery(value?.name ?? "");
@@ -64,7 +64,9 @@ export function LocationCombobox({
           q: trimmed,
           limit: "8",
         });
-        if (allowedKey) params.set("allowedCountries", allowedKey);
+        if (pickupCityId !== undefined) {
+          params.set("pickupCityId", String(pickupCityId));
+        }
 
         const response = await fetch(`/api/geo/cities?${params.toString()}`, {
           signal: controller.signal,
@@ -87,7 +89,7 @@ export function LocationCombobox({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [query, open, allowedKey]);
+  }, [query, open, pickupCityId]);
 
   function selectCity(city: CityWithCountry) {
     setQuery(city.name);
@@ -142,7 +144,7 @@ export function LocationCombobox({
         {label}
       </label>
 
-      <div className={`combo ${disabled ? "is-disabled" : ""}`}>
+      <div className={`combo${disabled ? " is-disabled" : ""}`}>
         <svg
           className="combo-icon"
           viewBox="0 0 24 24"
@@ -209,7 +211,7 @@ export function LocationCombobox({
                     type="button"
                     role="option"
                     aria-selected={index === highlight}
-                    className={`combo-option ${index === highlight ? "is-active" : ""}`}
+                    className={`combo-option${index === highlight ? " is-active" : ""}`}
                     onMouseDown={(event) => event.preventDefault()}
                     onMouseEnter={() => setHighlight(index)}
                     onClick={() => selectCity(city)}
@@ -221,7 +223,9 @@ export function LocationCombobox({
                         {city.countryName}
                       </span>
                     </span>
-                    <span className="combo-flag">{city.flag || city.countryCode}</span>
+                    <span className="combo-flag">
+                      {city.flag || city.countryCode}
+                    </span>
                   </button>
                 </li>
               ))}
@@ -231,9 +235,7 @@ export function LocationCombobox({
       ) : null}
 
       <span className="field-hint">
-        {value
-          ? `${value.countryCode} · ${value.timezone}`
-          : hint ?? "Start typing a city name"}
+        {value ? `${value.countryCode} · ${value.countryName}` : hint ?? ""}
       </span>
     </div>
   );

@@ -6,16 +6,8 @@ import {
 } from "./types";
 
 const COUNTRIES_URL = "https://countries.dev/countries";
-const COUNTRY_FIELDS = [
-  "name",
-  "alpha2Code",
-  "alpha3Code",
-  "borders",
-  "region",
-  "currencies",
-  "timezones",
-  "flag",
-].join(",");
+const COUNTRY_FIELDS = ["name", "alpha2Code", "alpha3Code", "borders", "flag"]
+  .join(",");
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const UPSTREAM_TIMEOUT_MS = 3_000;
@@ -45,7 +37,7 @@ function isCountryRecord(value: unknown): value is CountryRecord {
 /**
  * Pure builder so it can be unit-tested without the network.
  * Borders arrive as ISO alpha-3 codes; cities use alpha-2. We index both and
- * build a symmetric neighbour map.
+ * keep the neighbour map symmetric.
  */
 export function buildCountryIndex(rows: CountryRecord[]): CountryIndex {
   const valid = rows.filter(isCountryRecord);
@@ -67,9 +59,9 @@ export function buildCountryIndex(rows: CountryRecord[]): CountryIndex {
     byAlpha3.set(country.alpha3Code.toUpperCase(), country);
   }
 
-  const link = (a: string, b: string) => {
-    if (!neighbours.has(a)) neighbours.set(a, new Set());
-    neighbours.get(a)!.add(b);
+  const link = (from: string, to: string) => {
+    if (!neighbours.has(from)) neighbours.set(from, new Set());
+    neighbours.get(from)!.add(to);
   };
 
   for (const country of valid) {
@@ -87,7 +79,7 @@ export function buildCountryIndex(rows: CountryRecord[]): CountryIndex {
     }
   }
 
-  return { byAlpha2, byAlpha3, neighbours, fetchedAt: Date.now() };
+  return { byAlpha2, byAlpha3, neighbours };
 }
 
 async function fetchCountryIndex(): Promise<CountryIndex> {
@@ -136,7 +128,7 @@ export async function getCountryIndex(): Promise<CountryIndex> {
   try {
     return await inflight;
   } catch (error) {
-    // Serve stale data rather than failing the whole search.
+    // Serve stale data rather than failing the whole check.
     if (lastGood) return lastGood;
     if (error instanceof GeoError) throw error;
     throw new GeoError(
@@ -154,13 +146,13 @@ export function getCountry(
   return index.byAlpha2.get(code.trim().toUpperCase());
 }
 
+/** Pickup country plus every direct land-border neighbour. */
 export function getAllowedCountryCodes(
   index: CountryIndex,
   pickupCountryCode: string
 ): string[] {
   const pickup = pickupCountryCode.trim().toUpperCase();
-  const neighbours = index.neighbours.get(pickup);
-  return Array.from(new Set([pickup, ...(neighbours ?? [])]));
+  return Array.from(new Set([pickup, ...(index.neighbours.get(pickup) ?? [])]));
 }
 
 export function classifyRoute(
